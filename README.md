@@ -23,7 +23,9 @@ test [suite](tests/).
 
 PR are welcome to improve the interface and they should arrange to provide
 additional tests for the new features. The implementation provides a number of
-utility functions for reading files present within the pseudo [filesystem][man].
-As most of these are formatted in more or less similar ways, interfacing missing
-features is usually a matter of reading the manual and a few lines of
-implementation code.
+[lambda]-based utility functions for reading files present within the pseudo
+[filesystem][man]. As most of these are formatted in more or less similar ways,
+interfacing missing features is usually a matter of reading the manual and a few
+lines of implementation code.
+
+  [lambda]: https://www.tcl.tk/man/tcl/TclCmd/apply.htm
