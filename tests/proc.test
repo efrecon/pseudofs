@@ -1,0 +1,125 @@
+if {"::tcltest" ni [namespace children]} {
+    package require tcltest 2
+    namespace import -force ::tcltest::*
+}
+
+::tcl::tm::path add [file normalize [file join [file dirname [info script]] ..]]
+package require procfs
+
+test cmdline-1.1 {Check command-line is list} -body {
+    expr {[llength [procfs cmdline [pid]]]>0}
+} -result 1
+
+test cmdline-2.1 {Check command-line for us is tclsh} -match glob -body {
+    lindex [procfs cmdline [pid]] 0
+} -result "*tclsh*"
+
+test comm-1.1 {Check command for us is tclsh} -match glob -body {
+    procfs comm [pid]
+} -result "*tclsh*"
+
+test io-1.1 {Check I/O for us} -body {
+    set io [procfs io [pid]]
+    set hasKeys 1
+    foreach k [list rchar wchar read_bytes write_bytes] {
+        set hasKeys [expr {$hasKeys && [dict exists $io $k]}]
+    }
+    return $hasKeys
+} -result 1
+
+test if-1.1 {Network interfaces for us} -body {
+    expr {[llength [procfs interfaces [pid]]]>0}
+} -result 1
+
+test if-2.1 {Local interface for us} -body {
+    expr {[lsearch -glob -nocase [procfs interfaces [pid]] lo*]>=0}
+} -result 1
+
+test netstat-1.1 {Receive stats list for us} -body {
+    set stat [procfs netstat [pid] R]
+    set hasKeys 1
+    foreach k [list bytes packets errs drop fifo frame compressed multicast] {
+        set hasKeys [expr {$hasKeys && [dict exists $stat $k]}]
+    }
+    return $hasKeys
+} -result 1
+
+test netstat-2.1 {Transmit stats list for us} -body {
+    set stat [procfs netstat [pid] T]
+    set hasKeys 1
+    foreach k [list bytes packets errs drop fifo colls carrier compressed] {
+        set hasKeys [expr {$hasKeys && [dict exists $stat $k]}]
+    }
+    return $hasKeys
+} -result 1
+
+test netstat-3.1 {Unknown stats list for us} -match glob -body {
+    procfs netstat [pid] L
+} -result "Direction is not recognised*" -returnCodes 1
+
+test netstat-4.1 {Receive stats list for one of our interfaces} -body {
+    set stat [procfs netstat [pid] R [lindex [procfs interfaces [pid]] 0]]
+    set hasKeys 1
+    foreach k [list bytes packets errs drop fifo frame compressed multicast] {
+        set hasKeys [expr {$hasKeys && [dict exists $stat $k]}]
+    }
+    return $hasKeys
+} -result 1
+
+test netstat-5.1 {Transmit stats list for one of our interfaces} -body {
+    set stat [procfs netstat [pid] T [lindex [procfs interfaces [pid]] 0]]
+    set hasKeys 1
+    foreach k [list bytes packets errs drop fifo colls carrier compressed] {
+        set hasKeys [expr {$hasKeys && [dict exists $stat $k]}]
+    }
+    return $hasKeys
+} -result 1
+
+test stat-1.1 {Process stat} -body {
+    dict get [procfs stat [pid]] pid
+} -result [pid]
+
+test stat-2.1 {Process stat conversion} -body {
+    set raw [dict get [procfs stat [pid] 0] utime]
+    set secs [dict get [procfs stat [pid] 1] utime]
+    expr {$raw>$secs}
+} -result 1
+
+test stat-3.1 {No proc stat} -match glob -body {
+    procfs stat 0
+} -result * -returnCodes 1
+
+test statm-1.1 {Process statm} -body {
+    set stat [procfs statm [pid]]
+    set hasKeys 1
+    foreach k [list size resident shared text lib data dt] {
+        set hasKeys [expr {$hasKeys && [dict exists $stat $k]}]
+    }
+    return $hasKeys
+} -result 1
+
+test statm-2.1 {No proc state} -match glob -body {
+    procfs statm 0
+} -result * -returnCodes 1
+
+test status-1.1 {Process status} -body {
+    set stat [procfs status [pid]]
+    set hasKeys 1
+    foreach k [list Name Umask State Tgid Ngid Pid PPid TracerPid Uid Gid FDSize Groups NStgid NSpid NSpgid NSsid VmPeak VmSize VmLck VmPin VmHWM VmRSS RssAnon RssFile RssShmem VmData VmStk VmExe VmLib VmPTE VmSwap HugetlbPages CoreDumping Threads] {
+        set hasKeys [expr {$hasKeys && [dict exists $stat $k]}]
+    }
+    return $hasKeys
+} -result 1
+
+test status-2.1 {Status self} -match glob -body {
+    dict get [procfs status [pid]] Name
+} -result *tclsh*
+
+test status-3.1 {Status PID self} -body {
+    dict get [procfs status [pid]] Pid
+} -result [pid]
+
+test status-4.1 {No proc status} -match glob -body {
+    procfs status 0
+} -result * -returnCodes 1
+

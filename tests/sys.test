@@ -1,0 +1,82 @@
+#!/usr/bin/env tclsh
+
+if {"::tcltest" ni [namespace children]} {
+    package require tcltest 2
+    namespace import -force ::tcltest::*
+}
+
+::tcl::tm::path add [file normalize [file join [file dirname [info script]] ..]]
+package require procfs
+
+test pids-1.1 {Check pid list} -body {
+    set pids [procfs pids]
+    expr {[lsearch -exact $pids [pid]]>=0}
+} -result 1
+
+test if-1.1 {Network interfaces on system} -body {
+    expr {[llength [procfs interfaces]]>0}
+} -result 1
+
+test if-2.1 {Local interface on system} -body {
+    expr {[lsearch -glob -nocase [procfs interfaces] lo*]>=0}
+} -result 1
+
+test netstat-1.1 {Receive stats list} -body {
+    set stat [procfs netstat -1 R]
+    set hasKeys 1
+    foreach k [list bytes packets errs drop fifo frame compressed multicast] {
+        set hasKeys [expr {$hasKeys && [dict exists $stat $k]}]
+    }
+    return $hasKeys
+} -result 1
+
+test netstat-2.1 {Transmit stats list} -body {
+    set stat [procfs netstat -1 T]
+    set hasKeys 1
+    foreach k [list bytes packets errs drop fifo colls carrier compressed] {
+        set hasKeys [expr {$hasKeys && [dict exists $stat $k]}]
+    }
+    return $hasKeys
+} -result 1
+
+test netstat-3.1 {Unknown stats list} -match glob -body {
+    procfs netstat -1 L
+} -result "Direction is not recognised*" -returnCodes 1
+
+test netstat-4.1 {Receive stats list for one of our interfaces} -body {
+    set stat [procfs netstat -1 R [lindex [procfs interfaces [pid]] 0]]
+    set hasKeys 1
+    foreach k [list bytes packets errs drop fifo frame compressed multicast] {
+        set hasKeys [expr {$hasKeys && [dict exists $stat $k]}]
+    }
+    return $hasKeys
+} -result 1
+
+test netstat-5.1 {Transmit stats list for one of our interfaces} -body {
+    set stat [procfs netstat -1 T [lindex [procfs interfaces [pid]] 0]]
+    set hasKeys 1
+    foreach k [list bytes packets errs drop fifo colls carrier compressed] {
+        set hasKeys [expr {$hasKeys && [dict exists $stat $k]}]
+    }
+    return $hasKeys
+} -result 1
+
+test stat-1.1 {System stat} -body {
+    expr {[dict get [procfs stat] cpu user]>=0}
+} -result 1
+
+test stat-2.1 {System stat conversion} -body {
+    set raw [dict get [procfs stat -1 0] cpu user]
+    set secs [dict get [procfs stat -1 1] cpu user]
+    expr {$raw>$secs}
+} -result 1
+
+test meminfo-1.1 {Memory info} -body {
+    set stat [procfs meminfo]
+    set hasKeys 1
+    foreach k [list MemTotal MemFree MemAvailable Buffers Cached SwapCached Active Inactive VmallocTotal VmallocUsed VmallocChunk] {
+        set hasKeys [expr {$hasKeys && [dict exists $stat $k]}]
+    }
+    return $hasKeys
+} -result 1
+
