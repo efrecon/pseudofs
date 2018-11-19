@@ -395,6 +395,69 @@ proc ::procfs::meminfo {} {
 }
 
 
+proc ::procfs::cpuinfo { {convert true} } {
+    # Mapper for easier (converted) keys. See lscpu implementation at:
+    # https://github.com/karelzak/util-linux/blob/f0af42b51761428bdd821b31381fbfa1346f6782/sys-utils/lscpu.c#L379
+    set mapper {
+        vendor {vendor vendor_id "CPU implementer"}
+        family {family "cpu family"}
+        model {model "CPU part"}
+        modelname {"model name"}
+        stepping {stepping "CPU variant"}
+        mhz {"cpu MHz"}
+        dynamic_mhz {"cpu MHz dynamic"}
+        static_mhz {"cpu MHz static"}
+        flags {flags features Features type}
+        bogomips {bogomips BogoMIPS "bogomips per cpu"}
+        cpu {cpu}
+        revision {revision "CPU revision"}
+        mtid {"max thread id"}
+        addrsz {"address sizes"}
+    }
+    set cpus [list]
+    set cpu [dict create]
+    foreach line [Lines [file join ${vars::-proc} cpuinfo] {} -trim] {
+        if { $line eq "" } {
+            if { [dict size $cpu] > 0 } {
+                # Convert to somewhat unified across architectures and
+                # implementations.
+                if { $convert } {
+                    set cvt [dict create]
+                    dict for {k v} $cpu {
+                        set converted 0
+                        dict for {c allkeys} $mapper {
+                            if { [lsearch -exact $allkeys $k] >= 0 } {
+                                dict set cvt $c $v
+                                set converted 1
+                                break
+                            }
+                        }
+                        # Keep the key if we didn't recognise it.
+                        if {!$converted} {
+                            dict set cvt $k $v
+                        }
+                    }
+                    lappend cpus $cvt
+                } else {
+                    lappend cpus $cpu
+                }
+                # Start a new dictionary for next CPU information
+                set cpu [dict create]
+            }
+        } else {
+            set idx [string first ":" $line]
+            if { $idx >= 0 } {
+                set k [string trim [string range $line 0 [expr {$idx-1}]]]
+                set v [string trim [string range $line [expr {$idx+1}] end]]
+                dict set cpu $k $v
+            }
+        }
+    }
+
+    return $cpus
+}
+
+
 # ::procfs::status -- Process status
 #
 #      Return a dictionary with status for a given process. The keys

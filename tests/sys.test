@@ -80,4 +80,13 @@ test meminfo-1.1 {Memory info} -body {
     return $hasKeys
 } -result 1
 
+test cpuinfo-1.1 {CPU information} -body {
+    set cpu [lindex [procfs cpuinfo] 0]
+    set hasKeys 1
+    foreach k [list processor vendor bogomips family model mhz modelname flags] {
+        set hasKeys [expr {$hasKeys && [dict exists $cpu $k]}]
+    }
+    return $hasKeys
+} -result 1
+
 cleanupTests
