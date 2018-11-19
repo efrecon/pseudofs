@@ -1,43 +1,33 @@
 package require Tcl 8.6
+package require pseudofs
 
-namespace eval ::procfs {
+namespace eval ::pseudofs::proc {
     namespace eval vars {
-        variable -proc   "/proc"
-        variable -hook   {}
         variable CLK_TCK -1
     }
     namespace export {[a-z]*}
-    namespace ensemble create
+    namespace import \
+        [namespace parent]::configure \
+        [namespace parent]::lines \
+        [namespace parent]::file \
+        [namespace parent]::open \
+        [namespace parent]::close \
+        [namespace parent]::glob \
+        [namespace parent]::colon2dict
+    namespace ensemble create -command ::procfs
 }
 
+# ####### WARNING #########
+#
+# This imports a number of commands from the parent namespace, commands that
+# have identical names to a number of VERY common Tcl commands for IO. The
+# programmer should fully-qualify the original commands when writing code here!
+#
+# #######   EOW   #########
 
-proc ::procfs::configure { args } {
-    if { [llength $args] == 0 } {
-        set cfg [dict create]
-        foreach v [info vars vars::-*] {
-            dict set cfg [lindex [split $v ":"] end] [set $v]
-        }
-        return $cfg
-    } elseif { [llength $args] == 1 } {
-        set v -[string trimleft [lindex $args 0] -]
-        if { [info exists vars::$v] } {
-            return [set vars::$v]
-        } else {
-            return ""
-        }
-    } else {
-        foreach {k v} $args {
-            set k -[string trimleft $k -]
-            if { [info exists vars::$k] } {
-                set vars::$k $v
-            } else {
-                return -code error "$k is an unknown configuration option, should be one of [join [dict keys [configure]] , ]"
-            }
-        }
-    }
-}
 
-# ::procfs::pids -- List of processes
+
+# ::pseudofs::proc::pids -- List of processes
 #
 #      Return the list of processes running at the caller at this point in time.
 #
@@ -49,9 +39,9 @@ proc ::procfs::configure { args } {
 #
 # Side Effects:
 #      None.
-proc ::procfs::pids {} {
+proc ::pseudofs::proc::pids {} {
     set pids [list]
-    foreach dir [Glob ${vars::-proc} * -types d -tails -nocomplain] {
+    foreach dir [glob [configure -proc] * -types d -tails -nocomplain] {
         if { [string is integer -strict $dir] } {
             lappend pids $dir
         }
@@ -60,7 +50,7 @@ proc ::procfs::pids {} {
 }
 
 
-# ::procfs::cmdline -- Process command-line
+# ::pseudofs::proc::cmdline -- Process command-line
 #
 #      Returns a well-formatted list representing entire command-line and
 #      arguments for a given process.
@@ -73,14 +63,13 @@ proc ::procfs::pids {} {
 #
 # Side Effects:
 #      None.
-proc ::procfs::cmdline { pid } {
-    return [GetFileContent \
-                [file join ${vars::-proc} $pid cmdline] \
-                {cmdline {return [split [string trim $cmdline "\0"] "\0"]}}]
+proc ::pseudofs::proc::cmdline { pid } {
+    return [file [::file join [configure -proc] $pid cmdline] \
+                -lambda {cmdline {return [split [string trim $cmdline "\0"] "\0"]}}]
 }
 
 
-# ::procfs::comm -- Process command
+# ::pseudofs::proc::comm -- Process command
 #
 #      Return the name of the command that started a given process.
 #
@@ -92,14 +81,12 @@ proc ::procfs::cmdline { pid } {
 #
 # Side Effects:
 #      None.
-proc ::procfs::comm { pid } {
-    return [GetFileContent \
-                [file join ${vars::-proc} $pid comm] \
-                { c {return [string trim $c]}}]
+proc ::pseudofs::proc::comm { pid } {
+    return [file [::file join [configure -proc] $pid comm] -trim]
 }
 
 
-# ::procfs::io -- Disk I/O
+# ::pseudofs::proc::io -- Disk I/O
 #
 #      Returns a dictionary representing the Disk I/O for a given process.  The
 #      dictionary will contain the following keys: rchar, wchar, syscr, syscw,
@@ -114,12 +101,12 @@ proc ::procfs::comm { pid } {
 #
 # Side Effects:
 #      None.
-proc ::procfs::io { pid } {
-    return [Colon2Dict [file join ${vars::-proc} $pid io]]
+proc ::pseudofs::proc::io { pid } {
+    return [colon2dict [::file join [configure -proc] $pid io]]
 }
 
 
-# ::procfs::interfaces -- List network interfaces
+# ::pseudofs::proc::interfaces -- List network interfaces
 #
 #      List the network interfaces available to a process or to the entire
 #      system.
@@ -132,13 +119,13 @@ proc ::procfs::io { pid } {
 #
 # Side Effects:
 #      None.
-proc ::procfs::interfaces { { pid -1 } }  {
+proc ::pseudofs::proc::interfaces { { pid -1 } }  {
     if { $pid >= 0 } {
-        set fpath [file join ${vars::-proc} $pid net dev]
+        set fpath [::file join [configure -proc] $pid net dev]
     } else {
-        set fpath [file join ${vars::-proc} net dev]
+        set fpath [::file join [configure -proc] net dev]
     }
-    return [Lines $fpath \
+    return [lines $fpath \
                 {line {
                     set idx [string first ":" $line]
                     if { $idx >= 0 } {
@@ -148,7 +135,7 @@ proc ::procfs::interfaces { { pid -1 } }  {
 }
 
 
-# ::procfs::netstats -- Process/System network stats
+# ::pseudofs::proc::netstats -- Process/System network stats
 #
 #      Return a dictionary with network statistics for the whole system or a
 #      given process, for one or some of its interfaces. When requesting for
@@ -171,7 +158,7 @@ proc ::procfs::interfaces { { pid -1 } }  {
 #
 # Side Effects:
 #      None.
-proc ::procfs::netstats { { pid -1 } { direction "R" } { interface "*"} } {
+proc ::pseudofs::proc::netstats { { pid -1 } { direction "R" } { interface "*"} } {
     # Allow calling this with "receive" or "RECEIVE" or whatever starting with R
     # for receive and T for transmit.
     set direction [string index [string toupper $direction] 0]
@@ -185,11 +172,11 @@ proc ::procfs::netstats { { pid -1 } { direction "R" } { interface "*"} } {
     dict set fields T {}
     set stats {}
     if { $pid >= 0 } {
-        set fpath [file join ${vars::-proc} $pid net dev]
+        set fpath [::file join [configure -proc] $pid net dev]
     } else {
-        set fpath [file join ${vars::-proc} net dev]    
+        set fpath [::file join [configure -proc] net dev]    
     }
-    foreach line [Lines $fpath {} -trim -skip] {
+    foreach line [lines $fpath {} -trim -skip] {
         # Below is a typical dev content file that the code below is able to
         # parse. The idea is to parse the headers to first locate using the
         # first line where receive and transmit are, then discover the
@@ -267,7 +254,7 @@ proc ::procfs::netstats { { pid -1 } { direction "R" } { interface "*"} } {
 }
 
 
-# ::procfs::stat -- Process/system stat
+# ::pseudofs::proc::stat -- Process/system stat
 #
 #      Return a dictionary representing the process or system stat. The keys
 #      contained in these dictionaries will vary considerably when requesting
@@ -289,12 +276,12 @@ proc ::procfs::netstats { { pid -1 } { direction "R" } { interface "*"} } {
 #
 # Side Effects:
 #      None.
-proc ::procfs::stat { { pid -1 } { convert false } } {
+proc ::pseudofs::proc::stat { { pid -1 } { convert false } } {
     if { $pid >= 0 } {
         return [StatPID $pid $convert]
     }
     set stat {}
-    foreach line [Lines [file join ${vars::-proc} stat] {} -trim -skip] {
+    foreach line [lines [::file join [configure -proc] stat] {} -trim -skip] {
         switch -glob -- [lindex $line 0] {
             "cpu*" {
                 # Support for newer vars on lower versions of the kernel
@@ -340,7 +327,7 @@ proc ::procfs::stat { { pid -1 } { convert false } } {
 }
 
 
-# ::procfs::statm -- Memory statistics
+# ::pseudofs::proc::statm -- Memory statistics
 #
 #      Returns a dictionary with memory statistics for a given process. The keys
 #      of the dictionary are size, resident, shared, text, lib, data and dt.
@@ -354,10 +341,8 @@ proc ::procfs::stat { { pid -1 } { convert false } } {
 #
 # Side Effects:
 #      None.
-proc ::procfs::statm { pid } {
-    set line [GetFileContent \
-                [file join ${vars::-proc} $pid statm] \
-                { c {return [string trim $c]}}]
+proc ::pseudofs::proc::statm { pid } {
+    set line [file [::file join [configure -proc] $pid statm] -trim]
     lassign $line size resident shared text lib data dt
     dict set statm size $size
     dict set statm resident $resident
@@ -371,7 +356,7 @@ proc ::procfs::statm { pid } {
 }
 
 
-# ::procfs::meminfo -- Memory informaton
+# ::pseudofs::proc::meminfo -- Memory informaton
 #
 #      Returns a dictionary with memory information for the entire system. The
 #      entire list of keys is described in the /proc/meminfo section of the
@@ -385,8 +370,8 @@ proc ::procfs::statm { pid } {
 #
 # Side Effects:
 #      None.
-proc ::procfs::meminfo {} {
-    set meminfo [Colon2Dict [file join ${vars::-proc} meminfo]]
+proc ::pseudofs::proc::meminfo {} {
+    set meminfo [colon2dict [::file join [configure -proc] meminfo]]
     # Convert to # of bytes.
     dict for {k v} $meminfo {
         dict set meminfo $k [MemSizeConvert $v]
@@ -395,7 +380,7 @@ proc ::procfs::meminfo {} {
 }
 
 
-proc ::procfs::cpuinfo { {convert true} } {
+proc ::pseudofs::proc::cpuinfo { {convert true} } {
     # Mapper for easier (converted) keys. See lscpu implementation at:
     # https://github.com/karelzak/util-linux/blob/f0af42b51761428bdd821b31381fbfa1346f6782/sys-utils/lscpu.c#L379
     set mapper {
@@ -416,7 +401,7 @@ proc ::procfs::cpuinfo { {convert true} } {
     }
     set cpus [list]
     set cpu [dict create]
-    foreach line [Lines [file join ${vars::-proc} cpuinfo] {} -trim] {
+    foreach line [lines [::file join [configure -proc] cpuinfo] {} -trim] {
         if { $line eq "" } {
             if { [dict size $cpu] > 0 } {
                 # Convert to somewhat unified across architectures and
@@ -458,7 +443,7 @@ proc ::procfs::cpuinfo { {convert true} } {
 }
 
 
-# ::procfs::status -- Process status
+# ::pseudofs::proc::status -- Process status
 #
 #      Return a dictionary with status for a given process. The keys
 #      of the dictionary are as described in the /proc/[pid]/status section of
@@ -473,8 +458,8 @@ proc ::procfs::cpuinfo { {convert true} } {
 #
 # Side Effects:
 #      None.
-proc ::procfs::status { pid } {
-    set status [Colon2Dict [file join ${vars::-proc} $pid status]]
+proc ::pseudofs::proc::status { pid } {
+    set status [colon2dict [::file join [configure -proc] $pid status]]
     # Convert to # of bytes.
     foreach k [list VmPeak VmSize VmLck VmPin VmHWM VmRSS RssAnon RssFile RssShmem VmData VmStk VmExe VmLib VmPTE VmPWD VmSwap HugetlbPages] {
         if { [dict exists $status $k] } {
@@ -484,44 +469,18 @@ proc ::procfs::status { pid } {
     return $status
 }
 
-proc ::procfs::uptime { } {
-    set uptime [GetFileContent [file join ${vars::-proc} uptime]]
+proc ::pseudofs::proc::uptime { } {
+    set uptime [file [::file join [configure -proc] uptime] -trim]
     return [dict create uptime [lindex $uptime 0] idle [lindex $uptime 1]]
 }
 
 
-# ::procfs::Colon2Dict -- Convert colon led files
-#
-#      This procedure will return a dictionary representing the content of files
-#      that are formatted with a colon separated key-value format.  All empty
-#      lines will automatically be skipped. The keys and values are
-#      automatically trimmed from leading and ending spaces in the resulting dictionary.
-#
-# Arguments:
-#      fname    Path to file
-#
-# Results:
-#      Dictionary representing file content.
-#
-# Side Effects:
-#      None.
-proc ::procfs::Colon2Dict { fname } {
-    set d {}
-    foreach line [Lines $fname {} -trim -skip] {
-        set idx [string first ":" $line]
-        if { $idx >= 0 } {
-            set k [string trim [string range $line 0 [expr {$idx-1}]]]
-            set v [string trim [string range $line [expr {$idx+1}] end]]
-            dict set d $k $v
-        }
-    }
-    return $d
-}
 
 
-# ::procfs::StatPID -- Implementation of PID stat
+
+# ::pseudofs::proc::StatPID -- Implementation of PID stat
 #
-#      See main ::procfs::stat description
+#      See main ::pseudofs::proc::stat description
 #
 # Arguments:
 #      pid      Process identifier
@@ -532,9 +491,9 @@ proc ::procfs::Colon2Dict { fname } {
 #
 # Side Effects:
 #      None.
-proc ::procfs::StatPID { pid {convert false}} {
+proc ::pseudofs::proc::StatPID { pid {convert false}} {
     set stat {}
-    set line [GetFileContent [file join ${vars::-proc} $pid stat] {c {return [string trim $c]}}]
+    set line [file [::file join [configure -proc] $pid stat] -trim]
     append line [string repeat " 0" 20]; # This is to "create" values for things that appear in later kernels when running on an older kernel.
     scan $line "%d %s %c %d %d %d %d %d %u %lu %lu %lu %lu %lu %lu %ld %ld %ld %ld %ld %ld %lu %lu %ld %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %lu %d %d %u %u %lu %lu %ld %lu %lu %lu %lu %lu %lu %lu %d" \
         id \
@@ -651,7 +610,7 @@ proc ::procfs::StatPID { pid {convert false}} {
 }
 
 
-# ::procfs::MemSizeConvert -- Convert memory size
+# ::pseudofs::proc::MemSizeConvert -- Convert memory size
 #
 #      Detect the presence of kB, MB, etc. at the end of a memory size
 #      description and return the value in number of bytes.
@@ -664,7 +623,7 @@ proc ::procfs::StatPID { pid {convert false}} {
 #
 # Side Effects:
 #      None.
-proc ::procfs::MemSizeConvert { val } {
+proc ::pseudofs::proc::MemSizeConvert { val } {
     lassign $val value unit
     switch -nocase -glob -- $unit {
         "kB" {
@@ -691,7 +650,7 @@ proc ::procfs::MemSizeConvert { val } {
 }
 
 
-# ::procfs::CLK_TCK -- System clock tick
+# ::pseudofs::proc::CLK_TCK -- System clock tick
 #
 #      Return the system-wide number of ticks per seconds. This is cached as it
 #      requires calling getconf CLK_TCK.
@@ -704,7 +663,7 @@ proc ::procfs::MemSizeConvert { val } {
 #
 # Side Effects:
 #      Executes getconf to cache in the value.
-proc ::procfs::CLK_TCK {} {
+proc ::pseudofs::proc::CLK_TCK {} {
     # Cache (if necessary) system clock ticks. This is a constant.
     if { $vars::CLK_TCK < 0 } {
         # Integer rounding is a "good enough" approximation as we can't do this
@@ -720,98 +679,3 @@ proc ::procfs::CLK_TCK {} {
 }
 
 
-# ::procfs::GetFileContent -- Get content of file
-#
-#      Get the content of a given file, possibly applying a (lambda)
-#      transformation on the content. 
-#
-# Arguments:
-#      fpath    Path to file to read
-#      lambda   Lamba to apply on content (defaults to the content itself)
-#      dft      Default value on lambda errors.
-#
-# Results:
-#      (transformed) content of file, or default value.
-#
-# Side Effects:
-#      None.
-proc ::procfs::GetFileContent { fpath {lambda {c {return $c}}} { dft "" } } {
-    set content $dft
-    set fd [Open $fpath]
-    try {
-        set content [apply $lambda [read $fd]]
-    } finally {
-        Close $fd
-    }
-    return $content
-}
-
-
-# ::procfs::Lines -- Line-by-line file reading
-#
-#      Returns the (transformed) lines contained in a file. Each line will first
-#      be passed to a lambda and the result of this lambda will then be
-#      transformed further and possibly added to the list of lines depending on
-#      the arguments.  The meaning of the dash-led arguments is as follows:
-#      -trim to trim whitespaces from start and end of lambda-transformed line,
-#      -trimleft to trim whitespace at left only, -trimright for right-side
-#      trimming, -skip not to add lines that would be empty after
-#      lambda-transformation and trimming.
-#
-# Arguments:
-#      fpath    Path to file
-#      lambda   Lambad to apply on each (original) line from file
-#      args     dash-led arguments, see above.
-#
-# Results:
-#      (cleaned) list of lambda-transformed lines from file content.
-#
-# Side Effects:
-#      None.
-proc ::procfs::Lines { fpath lambda args } {
-    set lines [list]
-    set fd [Open $fpath]
-    try {
-        while {![eof $fd]} {
-            if { [llength $lambda] } {
-                set line [apply $lambda [gets $fd]]
-            } else {
-                set line [gets $fd]
-            }
-            if { "-trim" in $args } { set line [string trim $line] }
-            if { "-trimleft" in $args } { set line [string trimleft $line] }
-            if { "-trimright" in $args } { set line [string trimright $line] }
-            if { "-skip" ni $args || ( "-skip" in $args && $line ne "" ) } {
-                lappend lines $line
-            }
-        }
-    } finally {
-        Close $fd
-    }
-    return $lines
-}
-
-
-proc ::procfs::Open { fpath args } {
-    if { [llength ${vars::-hook}] } {
-        return [{*}${vars::-hook} open $fpath {*}$args]
-    } else {
-        return [open $fpath {*}$args]
-    }
-}
-
-proc ::procfs::Close { fd } {
-    if { [llength ${vars::-hook}] } {
-        return [{*}${vars::-hook} close $fd]
-    } else {
-        return [close $fd]
-    }
-}
-
-proc ::procfs::Glob { directory pattern args } {
-    if { [llength ${vars::-hook}] } {
-        return [{*}${vars::-hook} glob $directory $pattern {*}$args]
-    } else {
-        return [glob -directory $directory {*}$args -- $pattern]
-    }
-}

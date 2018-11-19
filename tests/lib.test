@@ -4,10 +4,10 @@ if {"::tcltest" ni [namespace children]} {
 }
 
 ::tcl::tm::path add [file normalize [file join [file dirname [info script]] ..]]
-package require procfs
+package require pseudofs
 
 test config-1.1 {Getting all config options} -body {
-    set cfg [procfs configure]
+    set cfg [pseudofs configure]
     set hasKeys 1
     foreach k [list -proc -hook] {
         set hasKeys [expr {$hasKeys && [dict exists $cfg $k]}]
@@ -17,19 +17,19 @@ test config-1.1 {Getting all config options} -body {
 
 
 test config-2.1 {Getting one config option} -body {
-    procfs configure -proc
+    pseudofs configure -proc
 } -result "/proc"
 
 
 test config-3.1 {Setting config options} -body {
-    procfs configure -proc /tmp
-    procfs configure -proc
+    pseudofs configure -proc /tmp
+    pseudofs configure -proc
 } -result "/tmp" -cleanup {
-    procfs configure -proc /proc
+    pseudofs configure -proc /proc
 }
 
 test config-4.1 {Setting unknown options} -match glob -returnCodes 1 -body {
-    procfs configure -ThisISNOTAnOPtion /tmp
+    pseudofs configure -ThisISNOTAnOPtion /tmp
 } -result "*-ThisISNOTAnOPtion*unknown*"
 
 cleanupTests

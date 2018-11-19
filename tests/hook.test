@@ -4,6 +4,7 @@ if {"::tcltest" ni [namespace children]} {
 }
 
 ::tcl::tm::path add [file normalize [file join [file dirname [info script]] ..]]
+package require pseudofs
 package require procfs
 
 
@@ -30,17 +31,20 @@ proc ::PFSHook { cmd args } {
 }
 
 test hook-1.1 {Gettings all procs. through hook} -body {
-    procfs configure -hook ::PFSHook
+    pseudofs configure -hook ::PFSHook
     set pids [procfs pids]
     expr {[lsearch -exact $pids [pid]]>=0}
-} -errorOutput "glob " -result 1    
+} -errorOutput "glob " -result 1 -cleanup {
+    pseudofs configure -hook {}
+}
 
 
 test hook-2.1 {System stat through hook} -body {
-    procfs configure -hook ::PFSHook
+    pseudofs configure -hook ::PFSHook
     expr {[dict get [procfs stat] cpu user]>=0}
-} -errorOutput "open close " -result 1
+} -errorOutput "open close " -result 1 -cleanup {
+    pseudofs configure -hook {}
+}
 
 
 cleanupTests
-
