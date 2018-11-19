@@ -80,3 +80,4 @@ test meminfo-1.1 {Memory info} -body {
     return $hasKeys
 } -result 1
 
+cleanupTests

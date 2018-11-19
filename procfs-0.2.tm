@@ -3,12 +3,39 @@ package require Tcl 8.6
 namespace eval ::procfs {
     namespace eval vars {
         variable -proc   "/proc"
+        variable -hook   {}
         variable CLK_TCK -1
     }
     namespace export {[a-z]*}
     namespace ensemble create
 }
 
+
+proc ::procfs::configure { args } {
+    if { [llength $args] == 0 } {
+        set cfg [dict create]
+        foreach v [info vars vars::-*] {
+            dict set cfg [lindex [split $v ":"] end] [set $v]
+        }
+        return $cfg
+    } elseif { [llength $args] == 1 } {
+        set v -[string trimleft [lindex $args 0] -]
+        if { [info exists vars::$v] } {
+            return [set vars::$v]
+        } else {
+            return ""
+        }
+    } else {
+        foreach {k v} $args {
+            set k -[string trimleft $k -]
+            if { [info exists vars::$k] } {
+                set vars::$k $v
+            } else {
+                return -code error "$k is an unknown configuration option, should be one of [join [dict keys [configure]] , ]"
+            }
+        }
+    }
+}
 
 # ::procfs::pids -- List of processes
 #
@@ -24,7 +51,7 @@ namespace eval ::procfs {
 #      None.
 proc ::procfs::pids {} {
     set pids [list]
-    foreach dir [glob -directory ${vars::-proc} -types d -tails -nocomplain -- *] {
+    foreach dir [Glob ${vars::-proc} * -types d -tails -nocomplain] {
         if { [string is integer -strict $dir] } {
             lappend pids $dir
         }
@@ -394,6 +421,11 @@ proc ::procfs::status { pid } {
     return $status
 }
 
+proc ::procfs::uptime { } {
+    set uptime [GetFileContent [file join ${vars::-proc} uptime]]
+    return [dict create uptime [lindex $uptime 0] idle [lindex $uptime 1]]
+}
+
 
 # ::procfs::Colon2Dict -- Convert colon led files
 #
@@ -612,7 +644,14 @@ proc ::procfs::MemSizeConvert { val } {
 proc ::procfs::CLK_TCK {} {
     # Cache (if necessary) system clock ticks. This is a constant.
     if { $vars::CLK_TCK < 0 } {
-        set vars::CLK_TCK [exec getconf CLK_TCK]
+        # Integer rounding is a "good enough" approximation as we can't do this
+        # in one single go.  It'll abstract away the time between the two
+        # different "calls" within the procfs.
+        set vars::CLK_TCK [expr {int(([dict get [stat self off] starttime] / [dict get [uptime] uptime])+0.5)}]
+        # The following could also be used, but depends on the existence of
+        # getconf, a binary that is not always available on linux, e.g.
+        # RancherOS.
+        #set vars::CLK_TCK [exec getconf CLK_TCK]
     }
     return $vars::CLK_TCK
 }
@@ -635,11 +674,11 @@ proc ::procfs::CLK_TCK {} {
 #      None.
 proc ::procfs::GetFileContent { fpath {lambda {c {return $c}}} { dft "" } } {
     set content $dft
-    set fd [open $fpath]
+    set fd [Open $fpath]
     try {
         set content [apply $lambda [read $fd]]
     } finally {
-        close $fd
+        Close $fd
     }
     return $content
 }
@@ -668,7 +707,7 @@ proc ::procfs::GetFileContent { fpath {lambda {c {return $c}}} { dft "" } } {
 #      None.
 proc ::procfs::Lines { fpath lambda args } {
     set lines [list]
-    set fd [open $fpath]
+    set fd [Open $fpath]
     try {
         while {![eof $fd]} {
             if { [llength $lambda] } {
@@ -684,7 +723,32 @@ proc ::procfs::Lines { fpath lambda args } {
             }
         }
     } finally {
-        close $fd
+        Close $fd
     }
     return $lines
+}
+
+
+proc ::procfs::Open { fpath args } {
+    if { [llength ${vars::-hook}] } {
+        return [{*}${vars::-hook} open $fpath {*}$args]
+    } else {
+        return [open $fpath {*}$args]
+    }
+}
+
+proc ::procfs::Close { fd } {
+    if { [llength ${vars::-hook}] } {
+        return [{*}${vars::-hook} close $fd]
+    } else {
+        return [close $fd]
+    }
+}
+
+proc ::procfs::Glob { directory pattern args } {
+    if { [llength ${vars::-hook}] } {
+        return [{*}${vars::-hook} glob $directory $pattern {*}$args]
+    } else {
+        return [glob -directory $directory {*}$args -- $pattern]
+    }
 }

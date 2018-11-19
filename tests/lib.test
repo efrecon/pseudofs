@@ -1,0 +1,36 @@
+if {"::tcltest" ni [namespace children]} {
+    package require tcltest 2
+    namespace import -force ::tcltest::*
+}
+
+::tcl::tm::path add [file normalize [file join [file dirname [info script]] ..]]
+package require procfs
+
+test config-1.1 {Getting all config options} -body {
+    set cfg [procfs configure]
+    set hasKeys 1
+    foreach k [list -proc -hook] {
+        set hasKeys [expr {$hasKeys && [dict exists $cfg $k]}]
+    }
+    return $hasKeys
+} -result 1
+
+
+test config-2.1 {Getting one config option} -body {
+    procfs configure -proc
+} -result "/proc"
+
+
+test config-3.1 {Setting config options} -body {
+    procfs configure -proc /tmp
+    procfs configure -proc
+} -result "/tmp" -cleanup {
+    procfs configure -proc /proc
+}
+
+test config-4.1 {Setting unknown options} -match glob -returnCodes 1 -body {
+    procfs configure -ThisISNOTAnOPtion /tmp
+} -result "*-ThisISNOTAnOPtion*unknown*"
+
+cleanupTests
+

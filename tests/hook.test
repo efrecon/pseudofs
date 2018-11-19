@@ -1,0 +1,46 @@
+if {"::tcltest" ni [namespace children]} {
+    package require tcltest 2
+    namespace import -force ::tcltest::*
+}
+
+::tcl::tm::path add [file normalize [file join [file dirname [info script]] ..]]
+package require procfs
+
+
+# This is a compatible hook implementation that will just relay the various
+# commands into their regular Tcl implementations, but will also output the name
+# of the subcommand on the standard error so that the test suite will be able to
+# detect that calls to the library effectively passed through the hook.
+proc ::PFSHook { cmd args } {
+    puts -nonewline stderr "$cmd "
+    switch -nocase -- $cmd {
+        "open" {
+            return [open [lindex $args 0] {*}[lrange $args 1 end]]
+        }
+        "close" {
+            return [close [lindex $args 0]]
+        }
+        "glob" {
+            return [glob -directory [lindex $args 0] {*}[lrange $args 2 end] -- [lindex $args 1]]
+        }
+        default {
+            return -code error "$cmd is an unsupported hook command"
+        }
+    }
+}
+
+test hook-1.1 {Gettings all procs. through hook} -body {
+    procfs configure -hook ::PFSHook
+    set pids [procfs pids]
+    expr {[lsearch -exact $pids [pid]]>=0}
+} -errorOutput "glob " -result 1    
+
+
+test hook-2.1 {System stat through hook} -body {
+    procfs configure -hook ::PFSHook
+    expr {[dict get [procfs stat] cpu user]>=0}
+} -errorOutput "open close " -result 1
+
+
+cleanupTests
+

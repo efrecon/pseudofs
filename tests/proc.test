@@ -105,7 +105,7 @@ test statm-2.1 {No proc state} -match glob -body {
 test status-1.1 {Process status} -body {
     set stat [procfs status [pid]]
     set hasKeys 1
-    foreach k [list Name Umask State Tgid Ngid Pid PPid TracerPid Uid Gid FDSize Groups NStgid NSpid NSpgid NSsid VmPeak VmSize VmLck VmPin VmHWM VmRSS RssAnon RssFile RssShmem VmData VmStk VmExe VmLib VmPTE VmSwap HugetlbPages CoreDumping Threads] {
+    foreach k [list Name State Tgid Pid PPid TracerPid Uid Gid FDSize Groups VmPeak VmSize VmLck VmHWM VmRSS VmData VmStk VmExe VmLib Threads] {
         set hasKeys [expr {$hasKeys && [dict exists $stat $k]}]
     }
     return $hasKeys
@@ -123,3 +123,4 @@ test status-4.1 {No proc status} -match glob -body {
     procfs status 0
 } -result * -returnCodes 1
 
+cleanupTests
