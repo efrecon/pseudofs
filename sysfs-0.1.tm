@@ -24,7 +24,14 @@ namespace eval ::pseudofs::sys {
 #
 # #######   EOW   #########
 
-proc ::pseudofs::sys::lsblk { { keys {NAME RA RO RM ROTA RAND MODEL SERIAL SIZE STATE ALIGNMENT MIN-IO OPT-IO PHY-SEC LOG-SEC RQ-SIZE DISC-ALN DISC-GRAN DISC-MAX DISC-ZERO WSAME VENDOR REV ZONED SECTOR}}} {
+proc ::pseudofs::sys::lsblk { args } {
+    pseudofs getopt args -keys keys { NAME RA RO RM ROTA RAND MODEL SERIAL SIZE STATE
+                                      ALIGNMENT MIN-IO OPT-IO PHY-SEC LOG-SEC RQ-SIZE
+                                      DISC-ALN DISC-GRAN DISC-MAX DISC-ZERO WSAME
+                                      VENDOR REV ZONED SECTOR }
+    pseudofs getopt args -allow allow "*"
+    pseudofs getopt args -deny deny ""
+
     set devices [list]
     set devs [glob [::file join [configure -sys] block] * -types d -tails -nocomplain]
     set locator {
@@ -53,53 +60,55 @@ proc ::pseudofs::sys::lsblk { { keys {NAME RA RO RM ROTA RAND MODEL SERIAL SIZE 
         SECTOR queue/hw_sector_size 0
     }
     foreach d $devs {
-        set dev [dict create]
-        set rootdir [::file join [configure -sys] block $d]
-        foreach k $keys {
-            switch -nocase -- $k {
-                "NAME" {
-                    dict set dev $k $d
-                }
-                "RA" -
-                "RO" -
-                "RM" -
-                "MODEL" -
-                "SERIAL" -
-                "ROTA" -
-                "RAND" -
-                "STATE" -
-                "ALIGNMENT" -
-                "MIN-IO" -
-                "OPT-IO" -
-                "PHY-SEC" -
-                "LOG-SEC" -
-                "RQ-SIZE" -
-                "DISC-ALN" -
-                "DISC-GRAN" -
-                "DISC-MAX" -
-                "DISC-ZERO" -
-                "WSAME" -
-                "VENDOR" -
-                "ZONED" -
-                "REV" -
-                "SECTOR" {
-                    foreach {key subdir dft} $locator {
-                        if { [string equal -nocase $key $k] } {
-                            dict set dev $key [file [::file join $rootdir $subdir] -trim -default $dft -nofail]
+        if { [string match $allow $d] && ![string match $deny $d] } {
+            set dev [dict create]
+            set rootdir [::file join [configure -sys] block $d]
+            foreach k $keys {
+                switch -nocase -- $k {
+                    "NAME" {
+                        dict set dev $k $d
+                    }
+                    "RA" -
+                    "RO" -
+                    "RM" -
+                    "MODEL" -
+                    "SERIAL" -
+                    "ROTA" -
+                    "RAND" -
+                    "STATE" -
+                    "ALIGNMENT" -
+                    "MIN-IO" -
+                    "OPT-IO" -
+                    "PHY-SEC" -
+                    "LOG-SEC" -
+                    "RQ-SIZE" -
+                    "DISC-ALN" -
+                    "DISC-GRAN" -
+                    "DISC-MAX" -
+                    "DISC-ZERO" -
+                    "WSAME" -
+                    "VENDOR" -
+                    "ZONED" -
+                    "REV" -
+                    "SECTOR" {
+                        foreach {key subdir dft} $locator {
+                            if { [string equal -nocase $key $k] } {
+                                dict set dev $key [file [::file join $rootdir $subdir] -trim -default $dft -nofail]
+                            }
                         }
                     }
-                }
-                "SIZE" {
-                    set sectors [file [::file join $rootdir size] -trim -default 0 -nofail]
-                    set secsize [file [::file join $rootdir queue hw_sector_size] -trim -default 0 -nofail]
-                    dict set dev SIZE [expr {$sectors*$secsize}]
-                }
-                default {
-                    return -code error "$k is not a known/supported lsblk key!"
+                    "SIZE" {
+                        set sectors [file [::file join $rootdir size] -trim -default 0 -nofail]
+                        set secsize [file [::file join $rootdir queue hw_sector_size] -trim -default 0 -nofail]
+                        dict set dev SIZE [expr {$sectors*$secsize}]
+                    }
+                    default {
+                        return -code error "$k is not a known/supported lsblk key!"
+                    }
                 }
             }
+            lappend devices $dev
         }
-        lappend devices $dev
     }
 
     return $devices
